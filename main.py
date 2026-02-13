@@ -1,102 +1,99 @@
 import os
 import time
 import requests
-from groq import Groq
-from requests_oauthlib import OAuth1
 
-# ===== ENV =====
-X_API_KEY = os.getenv("X_API_KEY")
-X_API_SECRET = os.getenv("X_API_SECRET")
-X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
-X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
+# =========================
+# НАСТРОЙКИ
+# =========================
+
+X_USERNAME = "nurgoldman13"   # твой @username БЕЗ @
+CHECK_INTERVAL = 60           # проверка раз в 60 секунд
+
 X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# ===== CLIENTS =====
-groq_client = Groq(api_key=GROQ_API_KEY)
+if not X_BEARER_TOKEN:
+    raise RuntimeError("❌ Не найден X_BEARER_TOKEN в переменных окружения")
 
-auth = OAuth1(
-    X_API_KEY,
-    X_API_SECRET,
-    X_ACCESS_TOKEN,
-    X_ACCESS_SECRET
-)
+HEADERS = {
+    "Authorization": f"Bearer {X_BEARER_TOKEN}",
+    "Content-Type": "application/json"
+}
 
-SEARCH_URL = "https://api.twitter.com/2/tweets/search/recent"
-REPLY_URL = "https://api.twitter.com/2/tweets"
+# =========================
+# ФУНКЦИИ
+# =========================
 
-replied_ids = set()
-
-# ===== FUNCTIONS =====
-def generate_ai_reply(text: str) -> str:
-    response = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a polite, neutral Twitter assistant. Reply briefly and naturally."
-            },
-            {
-                "role": "user",
-                "content": text
-            }
-        ],
-        max_tokens=120,
-        temperature=0.6
-    )
-    return response.choices[0].message.content.strip()
-
-
-def search_mentions():
-    headers = {
-        "Authorization": f"Bearer {X_BEARER_TOKEN}"
-    }
+def get_mentions():
+    """
+    Ищем упоминания @username, кроме своих твитов
+    """
+    url = "https://api.x.com/2/tweets/search/recent"
     params = {
-        "query": "@nurgoldman13 -is:retweet",
-        "max_results": 10,
-        "tweet.fields": "author_id"
+        "query": f"@{X_USERNAME} -from:{X_USERNAME}",
+        "tweet.fields": "author_id,conversation_id,created_at",
+        "max_results": 5
     }
 
-    r = requests.get(SEARCH_URL, headers=headers, params=params)
+    r = requests.get(url, headers=HEADERS, params=params)
+    print("🔍 SEARCH STATUS:", r.status_code)
+    print(r.text)
+
     if r.status_code != 200:
-        print("❌ Search error:", r.text)
         return []
 
-    return r.json().get("data", [])
+    data = r.json()
+    return data.get("data", [])
 
 
-def reply(tweet_id: str, text: str):
+def reply_to_tweet(tweet_id, text):
+    """
+    Ответ на твит
+    """
+    url = "https://api.x.com/2/tweets"
     payload = {
         "text": text,
-        "reply": {"in_reply_to_tweet_id": tweet_id}
+        "reply": {
+            "in_reply_to_tweet_id": tweet_id
+        }
     }
 
-    r = requests.post(REPLY_URL, auth=auth, json=payload)
-    if r.status_code not in (200, 201):
-        print("❌ Reply error:", r.text)
-    else:
-        print(f"✅ Replied to tweet {tweet_id}")
+    r = requests.post(url, headers=HEADERS, json=payload)
+    print("💬 REPLY STATUS:", r.status_code)
+    print(r.text)
 
 
-# ===== MAIN LOOP =====
-print("🚀 Twitter AI helper started")
+# =========================
+# ОСНОВНОЙ ЦИКЛ
+# =========================
 
-while True:
-    try:
-        tweets = search_mentions()
-        for tweet in tweets:
-            tid = tweet["id"]
-            if tid in replied_ids:
-                continue
+def main():
+    print("🚀 Twitter AI helper запущен")
 
-            text = tweet["text"]
-            ai_reply = generate_ai_reply(text)
-            reply(tid, ai_reply)
+    answered = set()  # чтобы не отвечать дважды
 
-            replied_ids.add(tid)
-            time.sleep(15)  # anti-ban
+    while True:
+        try:
+            mentions = get_mentions()
 
-    except Exception as e:
-        print("🔥 ERROR:", e)
+            for tweet in mentions:
+                tweet_id = tweet["id"]
 
-    time.sleep(60)
+                if tweet_id in answered:
+                    continue
+
+                reply_to_tweet(
+                    tweet_id,
+                    "👋 Привет! Бот работает и отвечает автоматически."
+                )
+
+                answered.add(tweet_id)
+
+            time.sleep(CHECK_INTERVAL)
+
+        except Exception as e:
+            print("❌ Ошибка:", e)
+            time.sleep(30)
+
+
+if __name__ == "__main__":
+    main()

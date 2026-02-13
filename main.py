@@ -1,14 +1,36 @@
-from groq import Groq
 import os
+from groq import Groq
+import time
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+# ====== НАСТРОЙКИ ======
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-response = client.chat.completions.create(
-    model="llama3-70b-8192",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Hello"}
-    ]
-)
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY is not set")
 
-print(response.choices[0].message.content)
+MODEL = "llama-3.1-8b-instant"
+
+client = Groq(api_key=GROQ_API_KEY)
+
+# ====== ОСНОВНОЙ ЦИКЛ (чтобы Railway не падал) ======
+def main():
+    while True:
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant"},
+                    {"role": "user", "content": "Ping"}
+                ]
+            )
+
+            print("AI response:", response.choices[0].message.content)
+
+        except Exception as e:
+            print("ERROR:", e)
+
+        time.sleep(30)  # чтобы сервис жил и не крашился
+
+
+if __name__ == "__main__":
+    main()

@@ -1,99 +1,61 @@
 import os
 import time
-import requests
+from dotenv import load_dotenv
 
-# =========================
-# НАСТРОЙКИ
-# =========================
+# ========================
+# LOAD ENV
+# ========================
+load_dotenv()
 
-X_USERNAME = "nurgoldman13"   # твой @username БЕЗ @
-CHECK_INTERVAL = 60           # проверка раз в 60 секунд
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+X_API_KEY = os.getenv("X_API_KEY")
+X_API_SECRET = os.getenv("X_API_SECRET")
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
+X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
+X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")  # optional
 
-X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")
-
-if not X_BEARER_TOKEN:
-    raise RuntimeError("❌ Не найден X_BEARER_TOKEN в переменных окружения")
-
-HEADERS = {
-    "Authorization": f"Bearer {X_BEARER_TOKEN}",
-    "Content-Type": "application/json"
+# ========================
+# CHECK REQUIRED VARS
+# ========================
+required_vars = {
+    "GROQ_API_KEY": GROQ_API_KEY,
+    "X_API_KEY": X_API_KEY,
+    "X_API_SECRET": X_API_SECRET,
+    "X_ACCESS_TOKEN": X_ACCESS_TOKEN,
+    "X_ACCESS_SECRET": X_ACCESS_SECRET,
 }
 
-# =========================
-# ФУНКЦИИ
-# =========================
+missing = [k for k, v in required_vars.items() if not v]
 
-def get_mentions():
-    """
-    Ищем упоминания @username, кроме своих твитов
-    """
-    url = "https://api.x.com/2/tweets/search/recent"
-    params = {
-        "query": f"@{X_USERNAME} -from:{X_USERNAME}",
-        "tweet.fields": "author_id,conversation_id,created_at",
-        "max_results": 5
-    }
+if missing:
+    raise RuntimeError(f"❌ Missing env vars: {', '.join(missing)}")
 
-    r = requests.get(url, headers=HEADERS, params=params)
-    print("🔍 SEARCH STATUS:", r.status_code)
-    print(r.text)
+print("✅ All required environment variables loaded")
 
-    if r.status_code != 200:
-        return []
+# ========================
+# CONFIG
+# ========================
+NO_SEARCH = True  # 🔕 IMPORTANT: disable search (no credits mode)
+IDLE_SLEEP_SECONDS = 60 * 30  # 30 minutes
 
-    data = r.json()
-    return data.get("data", [])
+print("🚀 Twitter AI helper started")
+print("🟢 Mode: NO SEARCH (free mode)")
+print("🧠 Groq ready")
+print("⏳ Idle mode started")
 
+# ========================
+# MAIN LOOP (IDLE)
+# ========================
+while True:
+    try:
+        # 🔕 SEARCH IS DISABLED
+        if NO_SEARCH:
+            print("😴 Idle... waiting (no search, no credits)")
+        
+        # ⏱ sleep to avoid bans
+        time.sleep(IDLE_SLEEP_SECONDS)
 
-def reply_to_tweet(tweet_id, text):
-    """
-    Ответ на твит
-    """
-    url = "https://api.x.com/2/tweets"
-    payload = {
-        "text": text,
-        "reply": {
-            "in_reply_to_tweet_id": tweet_id
-        }
-    }
-
-    r = requests.post(url, headers=HEADERS, json=payload)
-    print("💬 REPLY STATUS:", r.status_code)
-    print(r.text)
-
-
-# =========================
-# ОСНОВНОЙ ЦИКЛ
-# =========================
-
-def main():
-    print("🚀 Twitter AI helper запущен")
-
-    answered = set()  # чтобы не отвечать дважды
-
-    while True:
-        try:
-            mentions = get_mentions()
-
-            for tweet in mentions:
-                tweet_id = tweet["id"]
-
-                if tweet_id in answered:
-                    continue
-
-                reply_to_tweet(
-                    tweet_id,
-                    "👋 Привет! Бот работает и отвечает автоматически."
-                )
-
-                answered.add(tweet_id)
-
-            time.sleep(CHECK_INTERVAL)
-
-        except Exception as e:
-            print("❌ Ошибка:", e)
-            time.sleep(30)
-
-
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        # NEVER CRASH CONTAINER
+        print("⚠️ Runtime warning:", str(e))
+        time.sleep(60)

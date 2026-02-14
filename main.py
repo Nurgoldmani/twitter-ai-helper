@@ -1,96 +1,48 @@
 import os
-import time
-import tweepy
-import requests
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from groq import Groq
 
-# ========================
-# LOAD ENV
-# ========================
-load_dotenv()
+app = Flask(__name__)
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-X_API_KEY = os.getenv("X_API_KEY")
-X_API_SECRET = os.getenv("X_API_SECRET")
-X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
-X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
+# 🔑 Клиент Groq
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-required = {
-    "GROQ_API_KEY": GROQ_API_KEY,
-    "X_API_KEY": X_API_KEY,
-    "X_API_SECRET": X_API_SECRET,
-    "X_ACCESS_TOKEN": X_ACCESS_TOKEN,
-    "X_ACCESS_SECRET": X_ACCESS_SECRET,
-}
+@app.route("/", methods=["GET"])
+def health():
+    return "OK", 200
 
-missing = [k for k, v in required.items() if not v]
-if missing:
-    raise RuntimeError(f"❌ Missing env vars: {', '.join(missing)}")
 
-print("✅ Env loaded")
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.json
 
-# ========================
-# X CLIENT (OAuth 1.0a)
-# ========================
-auth = tweepy.OAuth1UserHandler(
-    consumer_key=X_API_KEY,
-    consumer_secret=X_API_SECRET,
-    access_token=X_ACCESS_TOKEN,
-    access_token_secret=X_ACCESS_SECRET,
-)
-x_client = tweepy.API(auth)
+    user_message = data.get("message", "").strip()
 
-# ========================
-# GROQ TEXT GENERATION
-# ========================
-def generate_text():
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": "llama3-8b-8192",
-        "messages": [
-            {
-                "role": "system",
-                "content": "Ты AI-помощник для Twitter (X). Пиши короткие, полезные, дружелюбные посты. Без эмодзи спама. До 200 символов."
-            },
-            {
-                "role": "user",
-                "content": "Сгенерируй интересный пост про AI, технологии или личную продуктивность."
-            }
-        ],
-        "temperature": 0.9,
-        "max_tokens": 120,
-    }
+    if not user_message:
+        return jsonify({"error": "Empty message"}), 400
 
-    r = requests.post(url, headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    # ✅ messages — СТРОГО ТАК
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": user_message}
+    ]
 
-# ========================
-# CONFIG
-# ========================
-POST_INTERVAL_SECONDS = 60 * 60  # 1 пост в час (безопасно)
-
-print("🚀 Twitter AI helper started")
-print("🧠 Groq text generation enabled")
-print("🟢 Mode: NO SEARCH (free)")
-print("✍️ Auto-posting with AI")
-
-# ========================
-# MAIN LOOP
-# ========================
-while True:
     try:
-        text = generate_text()
-        x_client.update_status(status=text)
-        print("✅ Posted:", text)
+        response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=300
+        )
 
-        time.sleep(POST_INTERVAL_SECONDS)
+        answer = response.choices[0].message.content
+        return jsonify({"reply": answer})
 
     except Exception as e:
-        # НЕ ПАДАЕМ
-        print("⚠️ Error:", str(e))
-        time.sleep(120)
+        print("GROQ ERROR:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
